@@ -3,6 +3,8 @@ trigger: none
 schedules:
 - cron: "55 17 * * *"
   displayName: Daily scheduled build
+  branches:
+    include: *
   always: true
 
 jobs:
