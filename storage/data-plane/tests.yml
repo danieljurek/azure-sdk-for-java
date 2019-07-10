@@ -1,12 +1,12 @@
 trigger: none
 
 schedules:
-- cron: "55 17 * * *"
-  displayName: Daily scheduled build
-  branches:
-    include:
-    - "*"
-  always: true
+  - cron: "05 18 * * *"
+    displayName: Daily scheduled build
+    branches:
+      include:
+      - "*"
+    always: true
 
 jobs:
     # When migrating change path to ../../eng/pipelines/templates/jobs/archetype-sdk-tests.yml
