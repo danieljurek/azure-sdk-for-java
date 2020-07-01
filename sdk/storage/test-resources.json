@@ -26,8 +26,7 @@
         "premiumAccountName": "[concat('prem', parameters('baseName'))]",
         "dataLakeAccountName": "[concat('dtlk', parameters('baseName'))]",
         "premiumFileAccountName": "[concat('premf', parameters('baseName'))]",
-        "location": "[resourceGroup().location]",
-        "isVersioningEnabled": "boolean"
+        "location": "[resourceGroup().location]"
     },
     "resources": [
         {
