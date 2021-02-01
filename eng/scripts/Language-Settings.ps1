@@ -221,6 +221,88 @@ function Update-java-CIConfig($pkgs, $ciRepo, $locationInDocRepo, $monikerId=$nu
   Set-Content -Path $pkgJsonLoc -Value $jsonContent
 }
 
+function Update-java-MonikerConfig($SupersedingPackages, $CiConfigLocation, $previewMonikerIndex=$null, $latestMonikerIndex=$null) {
+  if (-not (Test-Path $CiConfigLocation)) {
+    Write-Error "Unable to locate package json at location $CiConfigLocation, exiting."
+    exit(1)
+  }
+
+  $allJson  = Get-Content $CiConfigLocation | ConvertFrom-Json
+  $supersedingPackagesCache = @{}
+  foreach ($package in $SupersedingPackages) { 
+    $supersedingPackagesCache["$($package.GroupId):$($package.PackageId)"] = $package
+  }
+
+  $allJson[$previewMonikerIndex].packages = $allJson[$previewMonikerIndex].packages `
+    | Where-Object {
+      # {
+      #   "packageDownloadUrl": "https://repo1.maven.org/maven2",
+      #   "packageGroupId": "com.azure",
+      #   "packageArtifactId": "azure-core",
+      #   "packageVersion": "1.3.0-beta.1",
+      #   "inputPath": [],
+      #   "excludePath": [],
+      #   "excludepackages": "com.azure.core.implementation:com.azure.core.util.polling.implementation:com.azure.core.implementation.annotation:com.azure.core.implementation.serializer.jsonwrapper.api:com.azure.core.implementation.exception:com.azure.core.implementation.http:com.azure.core.implementation.serializer.jsonwrapper.jacksonwrapper:com.azure.core.implementation.serializer.jsonwrapper:com.azure.core.implementation.logging:com.azure.core.implementation.serializer:com.azure.core.implementation.serializer.jsonwrapper.spi"
+      # },
+
+      $packageKey = "$($_.packageGroupId):$($_.packageArtifactId)"
+      
+      # Keep packages which don't match superseding packages
+      if (-not $supersedingPackagesCache.ContainsKey($packageKey)) { 
+        return $true
+      }
+
+
+      $supersedingVersion = [AzureEngSemanticVersion]::ParseVersionString(
+        $supersedingPackagesCache[$packageKey].PackageVersion
+      )
+      $previewVersion = [AzureEngSemanticVersion]::ParseVersionString($_.packageVersion)
+    
+      # 1.0.0 > 1.0.0b2, return $false to exclude from the packages array
+      Write-Host "$packageKey@$supersedingVersion > $previewVersion ??"
+      if ($supersedingVersion -gt $previewVersion) { 
+        Write-Host "SUPERSEDED"
+        return $false 
+      }
+
+      Write-Host "NOT SUPERSEDED"
+      return $true
+    }
+
+  $jsonContent = $allJson | ConvertTo-Json -Depth 10 | % {$_ -replace "(?m)  (?<=^(?:  )*)", "    " }
+
+  Set-Content -Path $CiConfigLocation -Value $jsonContent
+}
+
+function Test-java-PackageSupersedesAllPublishedPackages($packageInfo, $ciConfigLocation=$null, $latestMonikerId=$null) {
+  # Java published package versions are stored in the CI config so business 
+  # logic does not have to reach out to 3rd party services
+
+  $currentVersion = [AzureEngSemanticVersion]::ParseVersionString($packageInfo.PackageVersion)
+
+  $allJson  = Get-Content $ciConfigLocation | ConvertFrom-Json
+  
+  $supersedingPublishedVersions = $allJson[$latestMonikerId].packages `
+    | Where-Object { 
+      # Ignore packages which do not match the name
+      if ($_.packageGroupId -ne $packageInfo.GroupId -or $_.packageArtifactId -ne $packageInfo.PackageId) { 
+        return $false 
+      }
+
+      Write-Host "Checking $($_.packageGroupId):$($_.packageArtifactId)"
+      $publishedVersion = [AzureEngSemanticVersion]::ParseVersionString($_.packageVersion)      
+      $superseded = $publishedVersion -gt $currentVersion
+
+      if ($superseded) { 
+        Write-Host "$($packageInfo.GroupId):$($packageInfo.PackageId)@$($packageInfo.PackageVersion) is superseded by version $($_.packageVersion)"
+      }
+      return $superseded
+    }
+
+    # If Count == 0 there are no superseding packages return $true, else $false
+    return ($supersedingPublishedVersions | Measure-Object).Count -eq 0
+}
+
 # function is used to filter packages to submit to API view tool
 function Find-java-Artifacts-For-Apireview($artifactDir, $pkgName = "")
 {
